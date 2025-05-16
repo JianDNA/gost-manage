@@ -26,18 +26,26 @@
 
 ## 安装方法
 
-### 快速安装
-
+### 方法 1：一步式安装（推荐）
 ```bash
-# 下载脚本
-wget -O gost-manager.sh https://raw.githubusercontent.com/yourusername/gost-manager/main/gost-manager.sh
+curl -sSL https://raw.githubusercontent.com/JianDNA/gost-manage/main/install.sh -o install.sh && bash install.sh
+```
 
-# 赋予执行权限
-chmod +x gost-manager.sh
+
+### 方法 2：手动安装
+```bash
+
+# 下载脚本
+curl -sSL https://raw.githubusercontent.com/JianDNA/gost-manage/main/gost.sh -o gost.sh
+
+# 设置执行权限
+chmod +x gost.sh
 
 # 运行脚本
-sudo ./gost-manager.sh
+./gost.sh
+
 ```
+
 
 ### 首次运行
 
