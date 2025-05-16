@@ -2,15 +2,15 @@
 
 # ========== 环境准备 ========== #
 function prepare_environment() {
-    echo "🔍 正在检查 Gost 安装状态..."
+    echo "🔍 正在检�?Gost 安装状�?.."
     if ! command -v gost >/dev/null 2>&1; then
-        echo "⚙️ 未检测到 gost，正在安装..."
+        echo "⚙️ 未检测到 gost，正在安�?.."
         bash <(curl -fsSL https://github.com/go-gost/gost/raw/master/install.sh) --install || {
-            echo "❌ 安装失败，请检查网络。"
+            echo "�?安装失败，请检查网络�?
             exit 1
         }
     fi
-    echo "✅ Gost 安装完成"
+    echo "�?Gost 安装完成"
 
     mkdir -p /etc/gost
     # 修正：创建正确格式的初始配置文件
@@ -40,7 +40,7 @@ WantedBy=multi-user.target
 EOF
         systemctl daemon-reload
         systemctl enable gost
-        echo "✅ Systemd 服务已配置并启用"
+        echo "�?Systemd 服务已配置并启用"
     fi
 }
 
@@ -64,7 +64,7 @@ PORT_RANGE_END=20260
 
 # 检查并安装依赖
 install_python3() {
-    print_warning "系统未安装 Python3，是否安装？[Y/n]: "
+    print_warning "系统未安�?Python3，是否安装？[Y/n]: "
     read confirm
     if [[ ! "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${COLOR_CYAN}正在安装 Python3...${COLOR_RESET}"
@@ -88,7 +88,7 @@ install_python3() {
 }
 
 install_pyyaml() {
-    print_warning "系统未安装 PyYAML 模块，是否安装？[Y/n]: "
+    print_warning "系统未安�?PyYAML 模块，是否安装？[Y/n]: "
     read confirm
     if [[ ! "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${COLOR_CYAN}正在安装 PyYAML...${COLOR_RESET}"
@@ -114,16 +114,16 @@ install_pyyaml() {
     return 1
 }
 
-# 检查 gost 服务状态
+# 检�?gost 服务状�?
 is_gost_running() {
     if systemctl is-active --quiet gost.service; then
         return 0  # 服务正在运行
     else
-        return 1  # 服务未运行
+        return 1  # 服务未运�?
     fi
 }
 
-# 判断进程是否为 gost
+# 判断进程是否�?gost
 is_process_gost() {
     local pid="$1"
     [[ -n "$pid" ]] && ps -p "$pid" -o comm= 2>/dev/null | grep -q "gost"
@@ -140,17 +140,17 @@ is_port_available_on_addr() {
     local addr="$1"
     local port="$2"
     
-    # 如果是本地地址，检查端口占用
+    # 如果是本地地址，检查端口占�?
     if is_local_address "$addr"; then
         if ss -tuln | grep -q ":$port "; then
-            # 获取占用端口的程序
+            # 获取占用端口的程�?
             local pid_info=$(ss -tulnp | grep ":$port " | grep -oP "pid=\K\d+" | head -1)
             
-            # 如果是 gost 本身占用的端口且服务在运行，要考虑我们是在修改现有配置
+            # 如果�?gost 本身占用的端口且服务在运行，要考虑我们是在修改现有配置
             if is_process_gost "$pid_info" && is_gost_running; then
                 local current_config=$(cat "$CONFIG_FILE")
                 
-                # 如果我们要修改正在使用的端口，可以忽略占用
+                # 如果我们要修改正在使用的端口，可以忽略占�?
                 if echo "$current_config" | grep -q "addr:.*:$port"; then
                     return 0
                 fi
@@ -204,7 +204,7 @@ service_exists() {
     grep -q "^- name: $name$" "$CONFIG_FILE"
 }
 
-# 解析指定名称服务的配置信息 - 修正版本
+# 解析指定名称服务的配置信�?- 修正版本
 get_service_config() {
     local name="$1"
     local service_line=$(grep -n "^- name: $name$" "$CONFIG_FILE" | cut -d: -f1)
@@ -213,31 +213,31 @@ get_service_config() {
         return 1
     fi
     
-    # 提取addr行
+    # 提取addr�?
     local addr_line=$(awk -v start="$service_line" 'NR==start+1 {print $0}' "$CONFIG_FILE")
     local addr=$(echo "$addr_line" | sed -E 's/.*addr: (.*)/\1/')
     
-    # 提取type行
+    # 提取type�?
     local type_line=$(awk -v start="$service_line" 'NR==start+3 {print $0}' "$CONFIG_FILE")
     local type=$(echo "$type_line" | sed -E 's/.*type: (.*)/\1/')
     
     # 提取完整的目标地址
     local target_line=$(grep -A 9 "^- name: $name$" "$CONFIG_FILE" | grep -m 1 "      addr:" | sed -E 's/.*addr: (.*)/\1/')
     
-    # 解析监听地址和端口
+    # 解析监听地址和端�?
     local listen_addr=""
     local listen_port=""
     
     if [[ "$addr" == :* ]]; then
-        # 格式是 :端口
+        # 格式�?:端口
         listen_port="${addr:1}"
     else
-        # 格式是 地址:端口
+        # 格式�?地址:端口
         listen_addr="${addr%:*}"
         listen_port="${addr##*:}"
     fi
     
-    # 输出提取的信息
+    # 输出提取的信�?
     echo "name=$name"
     echo "listen_addr=$listen_addr"
     echo "listen_port=$listen_port"
@@ -259,7 +259,7 @@ analyze_validation_result() {
         for port in $ports; do
             local pid_info=$(ss -tulnp | grep -w ":$port " | grep -oP "pid=\K\d+" | head -1)
             if ! is_process_gost "$pid_info"; then
-                # 存在非gost进程占用的端口
+                # 存在非gost进程占用的端�?
                 only_gost_port_warnings=0
                 break
             fi
@@ -276,17 +276,17 @@ analyze_validation_result() {
     fi
 }
 
-# 解析gost错误输出，展示更友好的错误信息 - 修复版支持多端口
+# 解析gost错误输出，展示更友好的错误信�?- 修复版支持多端口
 parse_gost_error() {
     local error_output="$1"
     
-    # 清理输出，删除调试信息和时间戳
+    # 清理输出，删除调试信息和时间�?
     local cleaned_output=$(echo "$error_output" | grep -v "level.*debug" | sed 's/{".*"time":"[^"]*"}//')
     
-    echo -e "\n${COLOR_YELLOW}◆ 详细信息:${COLOR_RESET}"
+    echo -e "\n${COLOR_YELLOW}�?详细信息:${COLOR_RESET}"
     
     if echo "$error_output" | grep -q "address already in use"; then
-        # 提取所有被占用的端口
+        # 提取所有被占用的端�?
         local ports=$(echo "$error_output" | grep -oP "listen \S+ :(\d+)" | grep -oP "\d+" || 
                     echo "$error_output" | grep -oP ":(\d+): bind" | grep -oP "\d+")
         
@@ -302,30 +302,30 @@ parse_gost_error() {
             local pid_info=$(ss -tulnp | grep ":$port " | grep -oP "pid=\K\d+" | head -1)
             
             if is_process_gost "$pid_info" && is_gost_running; then
-                echo -e "${COLOR_YELLOW}🔄 端口占用提示:${COLOR_RESET} 端口 $port 已被当前运行的 Gost 服务使用"
-                echo "  ► 占用情况:"
+                echo -e "${COLOR_YELLOW}🔄 端口占用提示:${COLOR_RESET} 端口 $port 已被当前运行�?Gost 服务使用"
+                echo "  �?占用情况:"
                 ss -tulnp | grep ":$port " | sed 's/^/    /'
-                echo -e "  ► ${COLOR_GREEN}提示:${COLOR_RESET} 这是正常情况，Gost 正在使用配置的端口"
+                echo -e "  �?${COLOR_GREEN}提示:${COLOR_RESET} 这是正常情况，Gost 正在使用配置的端�?
                 echo
             else
                 echo -e "${COLOR_RED}🚨 端口冲突:${COLOR_RESET} 端口 $port 已被其他程序占用"
-                echo "  ► 占用情况:"
+                echo "  �?占用情况:"
                 ss -tulnp | grep ":$port " | sed 's/^/    /'
-                echo -e "  ► ${COLOR_YELLOW}建议:${COLOR_RESET} 请关闭使用此端口的程序，或修改配置使用其他端口"
+                echo -e "  �?${COLOR_YELLOW}建议:${COLOR_RESET} 请关闭使用此端口的程序，或修改配置使用其他端�?
                 echo
             fi
         done
     elif echo "$error_output" | grep -q "no such host"; then
         local host=$(echo "$error_output" | grep -oP "dial \S+ ([^:]+)" | awk '{print $3}')
         echo -e "${COLOR_RED}🚨 主机无法解析:${COLOR_RESET} $host"
-        echo -e "  ► ${COLOR_YELLOW}建议:${COLOR_RESET} 检查目标服务器名称是否正确，或尝试使用IP地址"
+        echo -e "  �?${COLOR_YELLOW}建议:${COLOR_RESET} 检查目标服务器名称是否正确，或尝试使用IP地址"
     elif echo "$error_output" | grep -q "connection refused"; then
-        echo -e "${COLOR_RED}🚨 连接被拒绝:${COLOR_RESET} 无法连接到目标服务器"
-        echo -e "  ► ${COLOR_YELLOW}建议:${COLOR_RESET} 检查目标服务器是否开启，端口是否正确，以及防火墙设置"
+        echo -e "${COLOR_RED}🚨 连接被拒�?${COLOR_RESET} 无法连接到目标服务器"
+        echo -e "  �?${COLOR_YELLOW}建议:${COLOR_RESET} 检查目标服务器是否开启，端口是否正确，以及防火墙设置"
     elif echo "$error_output" | grep -q "yaml"; then
-        echo -e "${COLOR_RED}🚨 YAML格式错误:${COLOR_RESET} 配置文件语法有问题"
-        echo -e "  ► ${COLOR_YELLOW}建议:${COLOR_RESET} 检查配置文件语法，特别注意缩进和冒号后的空格"
-        echo -e "  ► 错误详情:"
+        echo -e "${COLOR_RED}🚨 YAML格式错误:${COLOR_RESET} 配置文件语法有问�?
+        echo -e "  �?${COLOR_YELLOW}建议:${COLOR_RESET} 检查配置文件语法，特别注意缩进和冒号后的空�?
+        echo -e "  �?错误详情:"
         echo "$error_output" | grep -i "yaml" | sed 's/^/    /'
     else
         echo -e "${COLOR_RED}🚨 其他错误:${COLOR_RESET}"
@@ -333,7 +333,7 @@ parse_gost_error() {
     fi
 }
 
-# ========== 主功能 ========== #
+# ========== 主功�?========== #
 # 列出服务 - 改进显示格式
 list_services() {
     local services=$(get_service_names)
@@ -342,7 +342,7 @@ list_services() {
         return 1
     fi
     
-    print_title "当前转发规则："
+    print_title "当前转发规则�?
     local i=1
     
     while IFS=: read -r line_num name; do
@@ -361,7 +361,7 @@ list_services() {
             listen_display="$listen_addr:$listen_port"
         fi
         
-        printf "%3d) %s（类型：%s，%s ----> %s）\n" $i "$name" "$protocol" "$listen_display" "$target_addr"
+        printf "%3d) %s（类型：%s�?s ----> %s）\n" $i "$name" "$protocol" "$listen_display" "$target_addr"
         ((i++))
     done <<< "$services"
     
@@ -373,14 +373,14 @@ add_service() {
     
     # 获取并验证服务名
     while true; do
-        read -p "$(echo -e ${COLOR_CYAN}请输入服务名称:${COLOR_RESET}) " name
+        read -p "$(echo -e ${COLOR_CYAN}请输入服务名�?${COLOR_RESET}) " name
         if [[ -z "$name" ]]; then
-            print_error "服务名不能为空，请重新输入"
+            print_error "服务名不能为空，请重新输�?
             continue
         fi
         
         if service_exists "$name"; then
-            print_error "服务名 '$name' 已存在，请使用其他名称"
+            print_error "服务�?'$name' 已存在，请使用其他名�?
             continue
         fi
         break
@@ -390,25 +390,25 @@ add_service() {
     echo -n -e "${COLOR_CYAN}请输入监听地址 [默认本机]: ${COLOR_RESET}"
     read listen_addr
     
-    # 获取并验证端口
+    # 获取并验证端�?
     while true; do
-        echo -n -e "${COLOR_CYAN}请输入监听端口 [默认自动分配]: ${COLOR_RESET}"
+        echo -n -e "${COLOR_CYAN}请输入监听端�?[默认自动分配]: ${COLOR_RESET}"
         read listen_port
         
         if [[ -z "$listen_port" ]]; then
             listen_port=$(get_random_port)
-            [[ -z "$listen_port" ]] && print_error "无可用端口" && return
+            [[ -z "$listen_port" ]] && print_error "无可用端�? && return
             print_success "自动分配端口: $listen_port"
             break
         elif [[ "$listen_port" =~ ^[0-9]+$ ]] && ((listen_port >= 1 && listen_port <= 65535)); then
             # 检查端口是否被占用（针对本地监听）
             if ! is_port_available_on_addr "$listen_addr" "$listen_port"; then
-                print_warning "请选择其他端口或使用自动分配"
+                print_warning "请选择其他端口或使用自动分�?
                 continue
             fi
             break
         else
-            print_error "端口无效，请输入1-65535之间的数字"
+            print_error "端口无效，请输入1-65535之间的数�?
         fi
     done
 
@@ -420,20 +420,20 @@ add_service() {
         if [[ "$protocol" == "tcp" || "$protocol" == "udp" ]]; then
             break
         else
-            print_error "无效的协议类型，请输入 tcp 或 udp"
+            print_error "无效的协议类型，请输�?tcp �?udp"
         fi
     done
 
     # 目标地址输入 - 支持完整格式
     while true; do
-        echo -n -e "${COLOR_CYAN}请输入目标地址（IP:PORT）: ${COLOR_RESET}"
+        echo -n -e "${COLOR_CYAN}请输入目标地址（IP:PORT�? ${COLOR_RESET}"
         read target_addr
         if [[ "$target_addr" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}$ ]] || 
            [[ "$target_addr" =~ ^([a-fA-F0-9:]+):[0-9]{1,5}$ ]]; then
             break
         else
             print_error "目标地址格式错误，请使用 IP:端口 格式"
-            print_error "示例: 192.168.1.100:443 或 [2001:db8::1]:80"
+            print_error "示例: 192.168.1.100:443 �?[2001:db8::1]:80"
         fi
     done
 
@@ -445,7 +445,7 @@ add_service() {
         addr_line="  addr: $listen_addr:$listen_port"
     fi
 
-    # 构建YAML配置块
+    # 构建YAML配置�?
     yaml_block="- name: $name
 $addr_line
   handler:
@@ -458,14 +458,14 @@ $addr_line
       addr: $target_addr"
 
     echo
-    echo -e "${COLOR_YELLOW}◆ 预览新配置:${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}�?预览新配�?${COLOR_RESET}"
     echo "$yaml_block"
     echo
     read -p "确认添加此规则？[Y/n]: " confirm
     [[ "$confirm" =~ ^[Nn]$ ]] && print_warning "取消操作" && return
 
-    # 修复空数组问题
-    # 检查配置文件中是否有 "services: []"
+    # 修复空数组问�?
+    # 检查配置文件中是否�?"services: []"
     if grep -q "services: \[\]" "$CONFIG_FILE"; then
         # 替换为正确的格式
         sed -i 's/services: \[\]/services:/' "$CONFIG_FILE"
@@ -473,7 +473,7 @@ $addr_line
 
     # 确保配置文件存在
     if ! grep -q "^services:" "$CONFIG_FILE"; then
-        # 如果没有services行，创建一个新的配置文件
+        # 如果没有services行，创建一个新的配置文�?
         echo "services:" > "$CONFIG_FILE.new"
         mv "$CONFIG_FILE.new" "$CONFIG_FILE"
     fi
@@ -492,18 +492,18 @@ $addr_line
         echo "$yaml_block" >> "$CONFIG_FILE"
     fi
     
-    print_success "规则已写入配置文件"
+    print_success "规则已写入配置文�?
 
     # 检查服务状态并重启
     echo -n "正在重启服务... "
     restart_output=$(systemctl daemon-reload && systemctl restart gost 2>&1)
     
     if [[ $? -eq 0 ]]; then
-        print_success "服务已成功重启"
+        print_success "服务已成功重�?
         print_success "配置规则添加成功"
     else
         print_error "服务重启失败"
-        echo -e "${COLOR_RED}可能存在配置错误或端口冲突${COLOR_RESET}"
+        echo -e "${COLOR_RED}可能存在配置错误或端口冲�?{COLOR_RESET}"
         echo "$restart_output"
         echo
         print_warning "配置已保存，但服务未正常启动，请检查错误后重试"
@@ -520,10 +520,10 @@ modify_service() {
     fi
     
     echo
-    echo -n -e "${COLOR_CYAN}请输入要修改的规则序号: ${COLOR_RESET}"
+    echo -n -e "${COLOR_CYAN}请输入要修改的规则序�? ${COLOR_RESET}"
     read index
     
-    # 获取选择的服务名称
+    # 获取选择的服务名�?
     local selected=$(get_service_names | sed -n "${index}p")
     if [[ -z "$selected" ]]; then
         print_error "无效序号"
@@ -531,7 +531,7 @@ modify_service() {
         return
     fi
     
-    # 提取服务名称和行号
+    # 提取服务名称和行�?
     local line_num=$(echo "$selected" | cut -d: -f1)
     local service_name=$(echo "$selected" | cut -d: -f2-)
     
@@ -553,7 +553,7 @@ modify_service() {
     # 显示当前配置
     echo
     print_title "当前配置:"
-    echo "服务名: $current_name"
+    echo "服务�? $current_name"
     echo "监听地址: ${current_listen_addr:-本机}"
     echo "监听端口: $current_listen_port"
     echo "协议类型: $current_protocol"
@@ -567,13 +567,13 @@ modify_service() {
         return
     fi
     
-    # 修改服务名称 - 允许修改，但需验证不为空和不重复
+    # 修改服务名称 - 允许修改，但需验证不为空和不重�?
     local name
     while true; do
         echo -n -e "${COLOR_CYAN}请输入新的服务名 [当前: $current_name，留空保持不变]: ${COLOR_RESET}"
         read name
         
-        # 如果留空，保持当前名称
+        # 如果留空，保持当前名�?
         if [[ -z "$name" ]]; then
             name="$current_name"
             break
@@ -581,7 +581,7 @@ modify_service() {
         
         # 检查是否与其他服务重名(排除自身)
         if grep -v "^- name: $current_name$" "$CONFIG_FILE" | grep -q "^- name: $name$"; then
-            print_error "服务名 '$name' 已存在，请使用其他名称"
+            print_error "服务�?'$name' 已存在，请使用其他名�?
             continue
         fi
         
@@ -596,7 +596,7 @@ modify_service() {
     
     # 修改监听端口
     while true; do
-        echo -n -e "${COLOR_CYAN}请输入新的监听端口 [当前: $current_listen_port，留空保持不变]: ${COLOR_RESET}"
+        echo -n -e "${COLOR_CYAN}请输入新的监听端�?[当前: $current_listen_port，留空保持不变]: ${COLOR_RESET}"
         read listen_port
         
         if [[ -z "$listen_port" ]]; then
@@ -606,19 +606,19 @@ modify_service() {
             # 如果端口不是当前端口，检查是否被占用
             if [[ "$listen_port" != "$current_listen_port" ]]; then
                 if ! is_port_available_on_addr "$listen_addr" "$listen_port"; then
-                    print_warning "请选择其他端口或保留当前端口"
+                    print_warning "请选择其他端口或保留当前端�?
                     continue
                 fi
             fi
             break
         else
-            print_error "端口无效，请输入1-65535之间的数字"
+            print_error "端口无效，请输入1-65535之间的数�?
         fi
     done
     
     # 修改协议类型
     while true; do
-        echo -n -e "${COLOR_CYAN}请输入新的协议类型 [当前: $current_protocol，留空保持不变]: ${COLOR_RESET}"
+        echo -n -e "${COLOR_CYAN}请输入新的协议类�?[当前: $current_protocol，留空保持不变]: ${COLOR_RESET}"
         read protocol
         
         if [[ -z "$protocol" ]]; then
@@ -627,7 +627,7 @@ modify_service() {
         elif [[ "$protocol" == "tcp" || "$protocol" == "udp" ]]; then
             break
         else
-            print_error "无效的协议类型，请输入 tcp 或 udp"
+            print_error "无效的协议类型，请输�?tcp �?udp"
         fi
     done
     
@@ -644,7 +644,7 @@ modify_service() {
             break
         else
             print_error "目标地址格式错误，请使用 IP:端口 格式"
-            print_error "示例: 192.168.1.100:443 或 [2001:db8::1]:80"
+            print_error "示例: 192.168.1.100:443 �?[2001:db8::1]:80"
         fi
     done
     
@@ -656,7 +656,7 @@ modify_service() {
         addr_line="  addr: $listen_addr:$listen_port"
     fi
     
-    # 构建YAML配置块
+    # 构建YAML配置�?
     yaml_block="- name: $name
 $addr_line
   handler:
@@ -669,14 +669,14 @@ $addr_line
       addr: $target_addr"
     
     echo
-    echo -e "${COLOR_YELLOW}◆ 修改后配置:${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}�?修改后配�?${COLOR_RESET}"
     echo "$yaml_block"
     echo
     read -p "确认更新此规则？[Y/n]: " confirm
     [[ "$confirm" =~ ^[Nn]$ ]] && print_warning "取消操作" && return
     
-    # 删除旧规则
-    # 查找下一个服务的行号或文件结尾
+    # 删除旧规�?
+    # 查找下一个服务的行号或文件结�?
     next_line=$(awk -v start="$((line_num+1))" 'NR>=start && /^- name:/ {print NR; exit}' "$CONFIG_FILE")
     if [[ -z "$next_line" ]]; then
         # 如果是最后一个服务，找下一个主要部分或文件结尾
@@ -685,7 +685,7 @@ $addr_line
             next_line=$(wc -l < "$CONFIG_FILE")
         fi
     else
-        # 减1因为我们要删到上一个服务的末尾
+        # �?因为我们要删到上一个服务的末尾
         next_line=$((next_line - 1))
     fi
     
@@ -693,7 +693,7 @@ $addr_line
     tmpfile=$(mktemp)
     sed "${line_num},${next_line}d" "$CONFIG_FILE" > "$tmpfile"
     
-    # 将新配置添加到合适位置
+    # 将新配置添加到合适位�?
     if [[ $line_num -eq 2 ]]; then
         # 如果是第一个规则（在services:行之后）
         awk -v block="$yaml_block" -v pos="$line_num" '
@@ -701,7 +701,7 @@ $addr_line
             NR>=pos {print}
         ' "$tmpfile" > "$tmpfile.new"
     else
-        # 否则在上一个规则后面插入
+        # 否则在上一个规则后面插�?
         awk -v block="$yaml_block" -v pos="$line_num" '
             NR<pos-1 {print}
             NR==pos-1 {print; print block}
@@ -712,18 +712,18 @@ $addr_line
     mv "$tmpfile.new" "$CONFIG_FILE"
     rm -f "$tmpfile"
     
-    print_success "规则已更新"
+    print_success "规则已更�?
     
-    # 重启服务并增加错误处理
+    # 重启服务并增加错误处�?
     echo -n "正在重启服务... "
     restart_output=$(systemctl daemon-reload && systemctl restart gost 2>&1)
     
     if [[ $? -eq 0 ]]; then
-        print_success "服务已成功重启"
+        print_success "服务已成功重�?
         print_success "配置规则修改成功"
     else
         print_error "服务重启失败"
-        echo -e "${COLOR_RED}可能存在配置错误或端口冲突${COLOR_RESET}"
+        echo -e "${COLOR_RED}可能存在配置错误或端口冲�?{COLOR_RESET}"
         parse_gost_error "$restart_output"
         echo
         print_warning "配置已保存，但服务未正常启动，请检查错误后重试"
@@ -740,10 +740,10 @@ delete_service() {
     fi
     
     echo
-    echo -n -e "${COLOR_CYAN}请输入要删除的规则序号: ${COLOR_RESET}"
+    echo -n -e "${COLOR_CYAN}请输入要删除的规则序�? ${COLOR_RESET}"
     read index
     
-    # 获取选择的服务行号
+    # 获取选择的服务行�?
     selected=$(get_service_names | sed -n "${index}p")
     if [[ -z "$selected" ]]; then
         print_error "无效序号"
@@ -755,7 +755,7 @@ delete_service() {
     IFS=: read line_num service_name <<< "$selected"
     
     # 确认删除
-    echo -e "${COLOR_YELLOW}将删除服务: ${COLOR_RESET}${service_name}"
+    echo -e "${COLOR_YELLOW}将删除服�? ${COLOR_RESET}${service_name}"
     read -p "确认删除？[y/N]: " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         print_warning "取消删除"
@@ -763,7 +763,7 @@ delete_service() {
         return
     fi
     
-    # 查找下一个服务的行号或文件结尾
+    # 查找下一个服务的行号或文件结�?
     next_line=$(awk -v start="$((line_num+1))" 'NR>=start && /^- name:/ {print NR; exit}' "$CONFIG_FILE")
     if [[ -z "$next_line" ]]; then
         # 如果是最后一个服务，找下一个主要部分或文件结尾
@@ -772,62 +772,62 @@ delete_service() {
             next_line=$(wc -l < "$CONFIG_FILE")
         fi
     else
-        # 减1因为我们要删到上一个服务的末尾
+        # �?因为我们要删到上一个服务的末尾
         next_line=$((next_line - 1))
     fi
     
     # 删除服务
     sed -i "${line_num},${next_line}d" "$CONFIG_FILE"
-    print_success "规则 ${service_name} 已删除"
+    print_success "规则 ${service_name} 已删�?
 
-    # 重启服务并处理错误
+    # 重启服务并处理错�?
     echo -n "正在重启服务... "
     restart_output=$(systemctl daemon-reload && systemctl restart gost 2>&1)
     
     if [[ $? -eq 0 ]]; then
-        print_success "服务已成功重启"
+        print_success "服务已成功重�?
     else
-        print_error "服务重启失败，但规则已删除"
+        print_error "服务重启失败，但规则已删�?
         parse_gost_error "$restart_output"
     fi
     
     read -n 1 -s -r -p "按任意键返回菜单..."
 }
 
-# 验证配置文件 - 完全重写以修复端口占用检测问题
+# 验证配置文件 - 完全重写以修复端口占用检测问�?
 validate_config() {
     echo
     print_title "校验配置文件格式"
     
-    # 检查 gost 服务状态
+    # 检�?gost 服务状�?
     local gost_running=0
     if is_gost_running; then
         print_success "Gost 服务正在运行"
         gost_running=1
     else
-        print_warning "Gost 服务未运行"
+        print_warning "Gost 服务未运�?
         gost_running=0
     fi
     
-    # 检查文件是否存在
+    # 检查文件是否存�?
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        print_error "配置文件不存在: $CONFIG_FILE"
+        print_error "配置文件不存�? $CONFIG_FILE"
         read -n 1 -s -r -p "按任意键返回菜单..."
         return 1
     fi
     
-    # 检查基本格式
+    # 检查基本格�?
     if ! grep -q "^services:" "$CONFIG_FILE"; then
         print_error "配置文件格式错误: 缺少 'services:' 声明"
         echo
         read -p "是否格式化配置文件？此操作将清空所有配置！[y/N]: " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            # 备份原文件
+            # 备份原文�?
             backup_file="${CONFIG_FILE}.bak.$(date +%s)"
             cp "$CONFIG_FILE" "$backup_file"
-            print_success "原配置已备份到: $backup_file"
+            print_success "原配置已备份�? $backup_file"
             
-            # 创建新配置
+            # 创建新配�?
             echo "services:" > "$CONFIG_FILE"
             print_success "配置文件已格式化"
             
@@ -838,20 +838,20 @@ validate_config() {
         return 1
     fi
     
-    # 检查 services: [] 格式
+    # 检�?services: [] 格式
     if grep -q "services: \[\]" "$CONFIG_FILE"; then
         print_warning "配置文件使用了空数组格式: 'services: []'"
         echo
         read -p "是否修复此问题？[Y/n]: " confirm
         if [[ ! "$confirm" =~ ^[Nn]$ ]]; then
-            # 备份原文件
+            # 备份原文�?
             backup_file="${CONFIG_FILE}.bak.$(date +%s)"
             cp "$CONFIG_FILE" "$backup_file"
-            print_success "原配置已备份到: $backup_file"
+            print_success "原配置已备份�? $backup_file"
             
             # 修复格式
             sed -i 's/services: \[\]/services:/' "$CONFIG_FILE"
-            print_success "配置文件已修复"
+            print_success "配置文件已修�?
             
             systemctl daemon-reload
             systemctl restart gost
@@ -860,32 +860,32 @@ validate_config() {
         return 1
     fi
     
-    # 检查 Python3 是否安装
+    # 检�?Python3 是否安装
     if ! command -v python3 &>/dev/null; then
-        print_warning "未检测到 Python3，无法进行高级 YAML 语法检查"
+        print_warning "未检测到 Python3，无法进行高�?YAML 语法检�?
         install_python3
     fi
     
-    # 基本YAML语法检查(如果Python可用)
+    # 基本YAML语法检�?如果Python可用)
     if command -v python3 &>/dev/null; then
         if ! python3 -c "import yaml" &>/dev/null; then
-            print_warning "系统未安装 PyYAML 模块，无法进行 YAML 语法检查"
+            print_warning "系统未安�?PyYAML 模块，无法进�?YAML 语法检�?
             install_pyyaml
         fi
         
         if python3 -c "import yaml" &>/dev/null; then
-            echo -e "${COLOR_CYAN}进行 YAML 语法检查...${COLOR_RESET}"
+            echo -e "${COLOR_CYAN}进行 YAML 语法检�?..${COLOR_RESET}"
             if ! python3 -c "import yaml; yaml.safe_load(open('$CONFIG_FILE'))" 2>/dev/null; then
                 print_error "配置文件YAML语法错误"
                 echo
                 read -p "是否格式化配置文件？此操作将清空所有配置！[y/N]: " confirm
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                    # 备份原文件
+                    # 备份原文�?
                     backup_file="${CONFIG_FILE}.bak.$(date +%s)"
                     cp "$CONFIG_FILE" "$backup_file"
-                    print_success "原配置已备份到: $backup_file"
+                    print_success "原配置已备份�? $backup_file"
                     
-                    # 创建新配置
+                    # 创建新配�?
                     echo "services:" > "$CONFIG_FILE"
                     print_success "配置文件已格式化"
                     
@@ -906,22 +906,22 @@ validate_config() {
     validation_result=$(gost -C "$CONFIG_FILE" -D 2>&1)
     validation_status=$?
     
-    # 分析验证结果是否只有端口被gost自身占用的警告
+    # 分析验证结果是否只有端口被gost自身占用的警�?
     analysis_result="has_errors"
     if [[ $validation_status -ne 0 ]]; then
         analysis_result=$(analyze_validation_result "$validation_result")
     fi
     
-    # 根据分析结果显示不同的信息
+    # 根据分析结果显示不同的信�?
     if [[ $validation_status -eq 0 || "$analysis_result" == "only_warnings" ]]; then
         if [[ $validation_status -eq 0 ]]; then
             print_success "配置文件结构完全正确"
         else
-            print_success "配置文件结构正确，仅有端口已被 Gost 使用的提示"
+            print_success "配置文件结构正确，仅有端口已�?Gost 使用的提�?
         fi
         
         # 主动检查所有配置的端口
-        echo -e "\n${COLOR_YELLOW}◆ 详细信息:${COLOR_RESET}"
+        echo -e "\n${COLOR_YELLOW}�?详细信息:${COLOR_RESET}"
         
         # 提取配置中的端口和地址
         local port_info=$(grep -A1 "^- name:" "$CONFIG_FILE" | grep "addr:" | sed -E 's/.*addr: (.*)/\1/')
@@ -935,33 +935,33 @@ validate_config() {
                 local listen_addr=""
                 
                 if [[ "$addr" == :* ]]; then
-                    # 格式是 :端口
+                    # 格式�?:端口
                     port="${addr:1}"
                 else
-                    # 格式是 地址:端口
+                    # 格式�?地址:端口
                     listen_addr="${addr%:*}"
                     port="${addr##*:}"
                 fi
                 
-                # 检查端口占用
+                # 检查端口占�?
                 if is_local_address "$listen_addr"; then
                     if ss -tuln | grep -q ":$port "; then
                         local pid_info=$(ss -tulnp | grep ":$port " | grep -oP "pid=\K\d+" | head -1)
                         if [[ -n "$pid_info" ]]; then
                             local process_name=$(ps -p $pid_info -o comm= 2>/dev/null || echo "未知进程")
                             
-                            # 检查是否是 gost 本身占用的端口
+                            # 检查是否是 gost 本身占用的端�?
                             if is_process_gost "$pid_info" && [[ $gost_running -eq 1 ]]; then
-                                echo -e "${COLOR_YELLOW}🔄 端口占用提示:${COLOR_RESET} 端口 $port 已被当前运行的 Gost 服务使用"
-                                echo "  ► 占用情况:"
+                                echo -e "${COLOR_YELLOW}🔄 端口占用提示:${COLOR_RESET} 端口 $port 已被当前运行�?Gost 服务使用"
+                                echo "  �?占用情况:"
                                 ss -tulnp | grep ":$port " | sed 's/^/    /'
-                                echo -e "  ► ${COLOR_GREEN}提示:${COLOR_RESET} 这是正常情况，Gost 正在使用配置的端口"
+                                echo -e "  �?${COLOR_GREEN}提示:${COLOR_RESET} 这是正常情况，Gost 正在使用配置的端�?
                                 echo
                             else
                                 echo -e "${COLOR_RED}🚨 端口冲突:${COLOR_RESET} 端口 $port 已被其他程序 $process_name (PID: $pid_info) 占用"
-                                echo "  ► 占用情况:"
+                                echo "  �?占用情况:"
                                 ss -tulnp | grep ":$port " | sed 's/^/    /'
-                                echo -e "  ► ${COLOR_YELLOW}建议:${COLOR_RESET} 请关闭使用此端口的程序，或修改配置使用其他端口"
+                                echo -e "  �?${COLOR_YELLOW}建议:${COLOR_RESET} 请关闭使用此端口的程序，或修改配置使用其他端�?
                                 echo
                                 other_process_using_port=1
                             fi
@@ -971,12 +971,12 @@ validate_config() {
             done <<< "$port_info"
         fi
         
-        echo -e "${COLOR_YELLOW}◆ 端口占用情况检查:${COLOR_RESET}"
+        echo -e "${COLOR_YELLOW}�?端口占用情况检�?${COLOR_RESET}"
         
         if [[ -z "$port_info" ]]; then
             echo "未发现配置的端口"
         else
-            echo -e "${COLOR_CYAN}以下端口已配置:${COLOR_RESET}"
+            echo -e "${COLOR_CYAN}以下端口已配�?${COLOR_RESET}"
             local has_issue=0
             
             while read -r addr; do
@@ -984,28 +984,28 @@ validate_config() {
                 local listen_addr=""
                 
                 if [[ "$addr" == :* ]]; then
-                    # 格式是 :端口
+                    # 格式�?:端口
                     port="${addr:1}"
                 else
-                    # 格式是 地址:端口
+                    # 格式�?地址:端口
                     listen_addr="${addr%:*}"
                     port="${addr##*:}"
                 fi
                 
                 echo -n "  $addr: "
                 
-                # 检查端口占用
+                # 检查端口占�?
                 if is_local_address "$listen_addr"; then
                     if ss -tuln | grep -q ":$port "; then
                         local pid_info=$(ss -tulnp | grep ":$port " | grep -oP "pid=\K\d+" | head -1)
                         if [[ -n "$pid_info" ]]; then
                             local process_name=$(ps -p $pid_info -o comm= 2>/dev/null || echo "未知进程")
                             
-                            # 检查是否是 gost 本身占用的端口
+                            # 检查是否是 gost 本身占用的端�?
                             if is_process_gost "$pid_info" && [[ $gost_running -eq 1 ]]; then
-                                echo -e "${COLOR_GREEN}由 Gost 自身使用 (正常)${COLOR_RESET}"
+                                echo -e "${COLOR_GREEN}�?Gost 自身使用 (正常)${COLOR_RESET}"
                             else
-                                echo -e "${COLOR_YELLOW}被进程 $process_name (PID: $pid_info) 占用${COLOR_RESET}"
+                                echo -e "${COLOR_YELLOW}被进�?$process_name (PID: $pid_info) 占用${COLOR_RESET}"
                                 has_issue=1
                             fi
                         else
@@ -1016,7 +1016,7 @@ validate_config() {
                         echo -e "${COLOR_GREEN}可用${COLOR_RESET}"
                     fi
                 else
-                    echo -e "${COLOR_GREEN}非本地地址，跳过检查${COLOR_RESET}"
+                    echo -e "${COLOR_GREEN}非本地地址，跳过检�?{COLOR_RESET}"
                 fi
             done <<< "$port_info"
             
@@ -1031,15 +1031,15 @@ validate_config() {
     else
         print_error "配置验证失败"
         
-        # 调用自定义函数解析错误
+        # 调用自定义函数解析错�?
         parse_gost_error "$validation_result"
         
         # 提供操作选项
         echo
-        echo -e "${COLOR_CYAN}可选操作:${COLOR_RESET}"
+        echo -e "${COLOR_CYAN}可选操�?${COLOR_RESET}"
         echo "1) 尝试自动修复配置格式问题"
         echo "2) 格式化配置（清空所有规则）"
-        echo "3) 返回主菜单"
+        echo "3) 返回主菜�?
         echo -n -e "${COLOR_YELLOW}请选择: ${COLOR_RESET}"
         read choice
         
@@ -1048,7 +1048,7 @@ validate_config() {
                 # 尝试自动修复
                 backup_file="${CONFIG_FILE}.bak.$(date +%s)"
                 cp "$CONFIG_FILE" "$backup_file"
-                print_success "原配置已备份到: $backup_file"
+                print_success "原配置已备份�? $backup_file"
                 
                 # 修复格式
                 sed -i 's/services: \[\]/services:/' "$CONFIG_FILE"
@@ -1069,12 +1069,12 @@ validate_config() {
                 systemctl restart gost
                 ;;
             2)
-                # 格式化配置
+                # 格式化配�?
                 backup_file="${CONFIG_FILE}.bak.$(date +%s)"
                 cp "$CONFIG_FILE" "$backup_file"
-                print_success "原配置已备份到: $backup_file"
+                print_success "原配置已备份�? $backup_file"
                 
-                # 创建新配置
+                # 创建新配�?
                 echo "services:" > "$CONFIG_FILE"
                 print_success "配置文件已格式化"
                 
@@ -1082,7 +1082,7 @@ validate_config() {
                 systemctl restart gost
                 ;;
             *) 
-                print_warning "返回主菜单" 
+                print_warning "返回主菜�? 
                 ;;
         esac
     fi
@@ -1092,7 +1092,7 @@ validate_config() {
 }
 
 
-# ========== 主菜单 ========== #
+# ========== 主菜�?========== #
 show_menu() {
     clear
     print_title "Gost 转发规则管理"
@@ -1101,7 +1101,7 @@ show_menu() {
     echo "3) 删除转发规则"
     echo "4) 查看当前配置"
     echo "5) 校验配置文件"
-    echo "0) 退出"
+    echo "0) 退�?
     echo
     echo -n -e "${COLOR_YELLOW}请选择操作: ${COLOR_RESET}"
     read choice
@@ -1116,7 +1116,7 @@ show_menu() {
     esac
 }
 
-# 修正可能已经损坏的配置文件
+# 修正可能已经损坏的配置文�?
 fix_config_file() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         return
@@ -1128,18 +1128,18 @@ fix_config_file() {
         sed -i 's/services: \[\]/services:/' "$CONFIG_FILE"
     fi
     
-    # 检查配置文件格式，如果已经损坏，尝试修复
+    # 检查配置文件格式，如果已经损坏，尝试修�?
     if ! grep -q "^services:" "$CONFIG_FILE"; then
         print_warning "配置文件格式可能有问题，尝试修复..."
-        # 备份原文件
+        # 备份原文�?
         cp "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date +%s)"
         
         # 创建新的正确格式文件
         echo "services:" > "$CONFIG_FILE.new"
         
-        # 提取并修正现有规则
+        # 提取并修正现有规�?
         grep -n "^ *- name:" "$CONFIG_FILE" | while IFS=: read -r line_num line_content; do
-            # 如果是顶级name条目，保持正确缩进
+            # 如果是顶级name条目，保持正确缩�?
             if [[ "$line_content" =~ ^-\ name: ]]; then
                 # 读取完整规则块，保持正确缩进
                 awk -v start="$line_num" 'NR>=start {
@@ -1149,13 +1149,13 @@ fix_config_file() {
             fi
         done
         
-        # 替换原文件
+        # 替换原文�?
         mv "$CONFIG_FILE.new" "$CONFIG_FILE"
-        print_success "配置文件已修复"
+        print_success "配置文件已修�?
     fi
 }
 
-# 主程序入口
+# 主程序入�?
 prepare_environment
 fix_config_file
 while true; do show_menu; done
