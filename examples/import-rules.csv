@@ -1,0 +1,27 @@
+# Gost转发规则导入示例文件
+# 格式: 服务名称,监听地址,监听端口,协议类型,目标地址
+# 监听地址留空表示监听所有接口
+
+# Web服务代理
+web_proxy,,8080,tcp,192.168.1.100:80
+web_ssl_proxy,,8443,tcp,192.168.1.100:443
+
+# SSH代理
+ssh_proxy,,2222,tcp,192.168.1.100:22
+ssh_backup,,2223,tcp,192.168.1.101:22
+
+# 数据库代理
+mysql_proxy,,3306,tcp,192.168.1.200:3306
+redis_proxy,,6379,tcp,192.168.1.201:6379
+
+# DNS代理
+dns_proxy,,5353,udp,8.8.8.8:53
+dns_backup,,5354,udp,1.1.1.1:53
+
+# 游戏服务器代理
+game_server,,7777,tcp,game.example.com:7777
+game_voice,,7778,udp,voice.example.com:7778
+
+# 监控服务代理
+grafana_proxy,,3000,tcp,192.168.1.300:3000
+prometheus_proxy,,9090,tcp,192.168.1.301:9090

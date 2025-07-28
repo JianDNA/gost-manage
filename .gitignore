@@ -1,0 +1,46 @@
+.augment/
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# 测试文件
+test-*
+demo-*
+*-test.*
+*-demo.*
+
+# 日志文件
+*.log
+
+# 配置备份文件
+*.yml.bak.*
+*.yaml.bak.*
+config.yml.bak.*
+
+# 导出的CSV文件（除了examples目录）
+/*.csv
+gost-rules.csv
+
+# 压缩文件
+*.tar.gz
+*.zip
+*.tar
+*.tgz
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器文件
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# 运行时文件
+*.pid
+*.sock
