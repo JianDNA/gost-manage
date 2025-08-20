@@ -10,7 +10,23 @@
 set -e
 
 # ========== 全局变量 ========== #
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 获取脚本目录的更健壮方式
+get_script_dir() {
+    local source="${BASH_SOURCE[0]}"
+    # 处理符号链接
+    while [[ -L "$source" ]]; do
+        local dir="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ $source != /* ]] && source="$dir/$source"
+    done
+    cd -P "$(dirname "$source")" 2>/dev/null && pwd || {
+        # 如果 pwd 失败，尝试使用绝对路径
+        local dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")"
+        [[ -d "$dir" ]] && echo "$dir" || echo "/opt/gost-manage"
+    }
+}
+
+SCRIPT_DIR="$(get_script_dir)"
 VERSION="2.0.0"
 
 # ========== 模块加载 ========== #

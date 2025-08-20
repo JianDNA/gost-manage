@@ -199,6 +199,8 @@ main() {
 
         if [[ -z "$response" || "$response" =~ ^[Yy] ]]; then
             echo
+            print_info "切换到安装目录并启动脚本..."
+            cd "$INSTALL_DIR"
             exec "$INSTALL_DIR/gost-manage.sh"
         else
             print_info "您可以随时使用 'sudo $SCRIPT_NAME' 命令运行脚本"
