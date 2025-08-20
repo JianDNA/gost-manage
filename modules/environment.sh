@@ -336,6 +336,16 @@ prepare_environment() {
     # 初始化配置文件
     init_config_file
     
+    # 检查和修复配置文件
+    if [[ -f "/etc/gost/config.yml" ]]; then
+        if grep -q "^services: null$" "/etc/gost/config.yml" || ! grep -q "^services:" "/etc/gost/config.yml"; then
+            print_warning "检测到配置文件问题，正在自动修复..."
+            if fix_config_file; then
+                print_success "配置文件已修复"
+            fi
+        fi
+    fi
+    
     # 创建systemd服务
     if [[ ! -f "/etc/systemd/system/gost.service" ]]; then
         create_systemd_service

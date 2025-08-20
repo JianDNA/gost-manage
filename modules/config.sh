@@ -21,7 +21,7 @@ init_config_file() {
     # 创建初始配置文件
     if [[ ! -f "$CONFIG_FILE" ]]; then
         cat > "$CONFIG_FILE" <<EOF
-services:
+services: []
 EOF
         print_success "创建初始配置文件: $CONFIG_FILE"
         log_operation "INIT_CONFIG" "创建初始配置文件"
@@ -163,19 +163,37 @@ add_service_to_config() {
         quoted_target_addr="\"$target_addr\""
     fi
 
-    # 添加服务配置
-    cat >> "$CONFIG_FILE" <<EOF
-- name: $service_name
-  addr: $full_addr
-  handler:
-    type: $protocol
-  listener:
-    type: $protocol
-  forwarder:
-    nodes:
-    - name: $service_name
-      addr: $quoted_target_addr
+    # 检查配置文件结构并添加服务
+    if grep -q "^services: \[\]$" "$CONFIG_FILE"; then
+        # 如果是空数组，替换为第一个服务
+        cat > "$CONFIG_FILE" <<EOF
+services:
+  - name: $service_name
+    addr: $full_addr
+    handler:
+      type: $protocol
+    listener:
+      type: $protocol
+    forwarder:
+      nodes:
+        - name: $service_name
+          addr: $quoted_target_addr
 EOF
+    else
+        # 如果已有服务，正确缩进追加
+        cat >> "$CONFIG_FILE" <<EOF
+  - name: $service_name
+    addr: $full_addr
+    handler:
+      type: $protocol
+    listener:
+      type: $protocol
+    forwarder:
+      nodes:
+        - name: $service_name
+          addr: $quoted_target_addr
+EOF
+    fi
     
     print_success "服务 '$service_name' 添加成功"
     log_operation "ADD_SERVICE" "添加服务: $service_name ($full_addr -> $target_addr)"
@@ -266,6 +284,62 @@ update_service_in_config() {
 
 # ========== 配置文件验证和修复 ========== #
 
+# 修复损坏的配置文件
+fix_config_file() {
+    if ! check_config_file; then
+        return 1
+    fi
+    
+    print_info "正在修复配置文件..."
+    
+    # 备份原配置
+    backup_config "$CONFIG_FILE"
+    
+    # 检查是否有 services: null 的情况
+    if grep -q "^services: null$" "$CONFIG_FILE"; then
+        print_warning "发现 services: null，正在修复..."
+        # 创建临时文件存储服务配置
+        local temp_services=$(mktemp)
+        
+        # 提取所有服务配置（跳过 services: null 行）
+        sed -n '/^- name:/,/^$/p' "$CONFIG_FILE" | sed '/^$/d' > "$temp_services"
+        
+        if [[ -s "$temp_services" ]]; then
+            # 重写配置文件
+            cat > "$CONFIG_FILE" <<EOF
+services:
+EOF
+            # 添加正确缩进的服务配置
+            sed 's/^/  /' "$temp_services" >> "$CONFIG_FILE"
+        else
+            # 没有服务，创建空数组
+            cat > "$CONFIG_FILE" <<EOF
+services: []
+EOF
+        fi
+        
+        rm -f "$temp_services"
+        print_success "配置文件修复完成"
+    fi
+    
+    # 检查缺少 services: 根节点的情况
+    if ! grep -q "^services:" "$CONFIG_FILE"; then
+        print_warning "缺少 services 根节点，正在修复..."
+        # 如果文件有内容但没有 services 节点，添加它
+        if [[ -s "$CONFIG_FILE" ]]; then
+            local temp_file=$(mktemp)
+            echo "services:" > "$temp_file"
+            sed 's/^/  /' "$CONFIG_FILE" >> "$temp_file"
+            mv "$temp_file" "$CONFIG_FILE"
+        else
+            echo "services: []" > "$CONFIG_FILE"
+        fi
+        print_success "已添加 services 根节点"
+    fi
+    
+    return 0
+}
+
 # 验证配置文件
 validate_config_file() {
     if ! check_config_file; then
@@ -273,6 +347,17 @@ validate_config_file() {
     fi
     
     print_info "正在验证配置文件..."
+    
+    # 首先尝试修复常见问题
+    if grep -q "^services: null$" "$CONFIG_FILE" || ! grep -q "^services:" "$CONFIG_FILE"; then
+        print_warning "检测到配置文件问题，正在自动修复..."
+        if fix_config_file; then
+            print_success "配置文件已自动修复"
+        else
+            print_error "配置文件修复失败"
+            return 1
+        fi
+    fi
     
     # 检查基本格式
     if ! grep -q "^services:" "$CONFIG_FILE"; then
