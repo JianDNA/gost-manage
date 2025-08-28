@@ -414,10 +414,11 @@ main() {
 # ========== 信号处理 ========== #
 cleanup_on_exit() {
     print_info "正在清理..."
+    cleanup_temp_files_on_exit
     exit 0
 }
 
-trap cleanup_on_exit SIGINT SIGTERM
+trap cleanup_on_exit SIGINT SIGTERM EXIT
 
 # ========== 启动程序 ========== #
 main "$@"

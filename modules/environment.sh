@@ -27,14 +27,39 @@ install_gost() {
         return 1
     fi
     
-    # 使用官方安装脚本
-    if bash <(curl -fsSL https://github.com/go-gost/gost/raw/master/install.sh) --install; then
-        print_success "Gost 安装成功"
-        log_operation "INSTALL_GOST" "成功安装 Gost"
-        return 0
+    # 使用固定版本的安装脚本以提高安全性
+    local install_script_url="https://github.com/go-gost/gost/raw/v3.0.1/install.sh"
+    local temp_install_script=$(create_temp_file)
+    
+    print_info "下载安装脚本..."
+    if ! curl -fsSL "$install_script_url" -o "$temp_install_script"; then
+        print_error "下载安装脚本失败"
+        return 1
+    fi
+    
+    # 基础安全检查：检查脚本是否包含可疑内容
+    if grep -E "(rm -rf /|sudo rm|format|mkfs)" "$temp_install_script" >/dev/null; then
+        print_error "安装脚本包含潜在危险操作，拒绝执行"
+        return 1
+    fi
+    
+    # 显示脚本的前几行供用户确认
+    print_info "安装脚本内容预览："
+    head -20 "$temp_install_script"
+    echo "..."
+    
+    if ask_confirmation "确认执行此安装脚本？"; then
+        if bash "$temp_install_script" --install; then
+            print_success "Gost 安装成功"
+            log_operation "INSTALL_GOST" "成功安装 Gost"
+            return 0
+        else
+            print_error "Gost 安装失败"
+            log_operation "INSTALL_GOST" "Gost 安装失败"
+            return 1
+        fi
     else
-        print_error "Gost 安装失败"
-        log_operation "INSTALL_GOST" "Gost 安装失败"
+        print_info "用户取消安装"
         return 1
     fi
 }

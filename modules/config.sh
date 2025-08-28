@@ -164,7 +164,8 @@ add_service_to_config() {
     fi
 
     # 检查配置文件结构并添加服务
-    if grep -q "^services: \[\]$" "$CONFIG_FILE"; then
+    # 检查是否为空服务配置：services: [] 或者只有 services:
+    if grep -q "^services: \[\]$" "$CONFIG_FILE" || (grep -q "^services:$" "$CONFIG_FILE" && ! grep -q "^  - name:" "$CONFIG_FILE"); then
         # 如果是空数组，替换为第一个服务
         cat > "$CONFIG_FILE" <<EOF
 services:
@@ -197,6 +198,12 @@ EOF
     
     print_success "服务 '$service_name' 添加成功"
     log_operation "ADD_SERVICE" "添加服务: $service_name ($full_addr -> $target_addr)"
+    
+    # 清理服务名称缓存
+    if command -v clear_service_names_cache >/dev/null 2>&1; then
+        clear_service_names_cache
+    fi
+    
     return 0
 }
 
@@ -213,11 +220,11 @@ delete_service_from_config() {
     backup_config "$CONFIG_FILE"
     
     # 创建临时文件
-    local temp_file=$(mktemp)
+    local temp_file=$(create_temp_file)
     
     # 使用更简单的方法：逐行处理，跟踪服务状态
     local in_target_service=false
-    local temp_file2=$(mktemp)
+    local temp_file2=$(create_temp_file)
 
     while IFS= read -r line; do
         # 检查是否是目标服务的开始
@@ -247,6 +254,12 @@ delete_service_from_config() {
     
     print_success "服务 '$service_name' 删除成功"
     log_operation "DELETE_SERVICE" "删除服务: $service_name"
+    
+    # 清理服务名称缓存
+    if command -v clear_service_names_cache >/dev/null 2>&1; then
+        clear_service_names_cache
+    fi
+    
     return 0
 }
 
@@ -279,6 +292,12 @@ update_service_in_config() {
     else
         log_operation "UPDATE_SERVICE" "更新服务: $service_name"
     fi
+    
+    # 清理服务名称缓存
+    if command -v clear_service_names_cache >/dev/null 2>&1; then
+        clear_service_names_cache
+    fi
+    
     return 0
 }
 
@@ -299,7 +318,7 @@ fix_config_file() {
     if grep -q "^services: null$" "$CONFIG_FILE"; then
         print_warning "发现 services: null，正在修复..."
         # 创建临时文件存储服务配置
-        local temp_services=$(mktemp)
+        local temp_services=$(create_temp_file)
         
         # 提取所有服务配置（跳过 services: null 行）
         sed -n '/^- name:/,/^$/p' "$CONFIG_FILE" | sed '/^$/d' > "$temp_services"
@@ -327,7 +346,7 @@ EOF
         print_warning "缺少 services 根节点，正在修复..."
         # 如果文件有内容但没有 services 节点，添加它
         if [[ -s "$CONFIG_FILE" ]]; then
-            local temp_file=$(mktemp)
+            local temp_file=$(create_temp_file)
             echo "services:" > "$temp_file"
             sed 's/^/  /' "$CONFIG_FILE" >> "$temp_file"
             mv "$temp_file" "$CONFIG_FILE"
@@ -461,9 +480,6 @@ normalize_config_format() {
         fi
     fi
 
-    # 第三步：基础格式修复
-    fix_common_format_issues
-
     # 第三步：修复常见格式问题
     fix_common_format_issues
 
@@ -479,16 +495,31 @@ normalize_config_format() {
 
 # 使用Python标准化YAML格式
 normalize_yaml_with_python() {
-    local temp_file=$(mktemp)
+    local temp_file=$(create_temp_file)
+    
+    # 安全地转义配置文件路径
+    local escaped_config_file
+    escaped_config_file=$(printf '%q' "$CONFIG_FILE")
+    local escaped_temp_file  
+    escaped_temp_file=$(printf '%q' "$temp_file")
 
     python3 << EOF
 import yaml
 import sys
 import re
+import os
 
 try:
+    config_file = $escaped_config_file
+    temp_file = $escaped_temp_file
+    
+    # 检查文件是否存在和可读
+    if not os.path.exists(config_file) or not os.access(config_file, os.R_OK):
+        print(f"无法读取配置文件: {config_file}", file=sys.stderr)
+        sys.exit(1)
+    
     # 读取配置文件
-    with open('$CONFIG_FILE', 'r', encoding='utf-8') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         content = f.read()
 
     # 预处理：修复常见的格式问题
@@ -515,7 +546,7 @@ try:
                         service['listener'] = {'type': service['listener'][5:].strip()}
 
     # 标准化输出
-    with open('$temp_file', 'w', encoding='utf-8') as f:
+    with open(temp_file, 'w', encoding='utf-8') as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, indent=2, sort_keys=False)
 
     sys.exit(0)
@@ -535,7 +566,7 @@ EOF
 
 # 修复常见格式问题
 fix_common_format_issues() {
-    local temp_file=$(mktemp)
+    local temp_file=$(create_temp_file)
     local fixed=false
 
     # 修复 services: [] 格式
@@ -550,7 +581,7 @@ fix_common_format_issues() {
     if ! grep -q "^services:" "$CONFIG_FILE"; then
         print_warning "配置文件缺少 services: 根节点，正在修复..."
 
-        temp_file=$(mktemp)
+        temp_file=$(create_temp_file)
         echo "services:" > "$temp_file"
 
         # 如果原文件有服务配置，添加到新文件中

@@ -38,9 +38,84 @@ print_separator() {
     echo -e "${COLOR_MAGENTA}----------------------------------------${COLOR_RESET}"
 }
 
+# ========== 缓存管理 ========== #
+# 服务名称缓存
+CACHED_SERVICE_NAMES=""
+CACHED_SERVICE_NAMES_TIMESTAMP=0
+CACHE_EXPIRY_SECONDS=5
+
+# 获取带缓存的服务名称
+get_cached_service_names() {
+    local current_time=$(date +%s)
+    local config_mtime=0
+    
+    # 获取配置文件修改时间
+    if [[ -f "/etc/gost/config.yml" ]]; then
+        config_mtime=$(stat -c %Y "/etc/gost/config.yml" 2>/dev/null || echo "0")
+    fi
+    
+    # 检查缓存是否有效
+    if [[ -n "$CACHED_SERVICE_NAMES" ]] && 
+       [[ $((current_time - CACHED_SERVICE_NAMES_TIMESTAMP)) -lt $CACHE_EXPIRY_SECONDS ]] &&
+       [[ $config_mtime -le $CACHED_SERVICE_NAMES_TIMESTAMP ]]; then
+        echo "$CACHED_SERVICE_NAMES"
+        return 0
+    fi
+    
+    # 重新获取服务名称并缓存
+    if command -v get_service_names >/dev/null 2>&1; then
+        CACHED_SERVICE_NAMES=$(get_service_names)
+        CACHED_SERVICE_NAMES_TIMESTAMP=$current_time
+        echo "$CACHED_SERVICE_NAMES"
+    fi
+}
+
+# 清理服务名称缓存
+clear_service_names_cache() {
+    CACHED_SERVICE_NAMES=""
+    CACHED_SERVICE_NAMES_TIMESTAMP=0
+}
+
+# ========== 临时文件管理 ========== #
+# 临时文件数组
+declare -a TEMP_FILES_TO_CLEANUP=()
+
+# 添加临时文件到清理列表
+register_temp_file() {
+    local temp_file="$1"
+    TEMP_FILES_TO_CLEANUP+=("$temp_file")
+}
+
+# 清理所有临时文件
+cleanup_temp_files_on_exit() {
+    local file
+    for file in "${TEMP_FILES_TO_CLEANUP[@]}"; do
+        if [[ -f "$file" ]]; then
+            rm -f "$file" 2>/dev/null || true
+        fi
+    done
+    TEMP_FILES_TO_CLEANUP=()
+}
+
+# 创建临时文件并自动注册清理
+create_temp_file() {
+    local temp_file
+    temp_file=$(mktemp) || return 1
+    register_temp_file "$temp_file"
+    echo "$temp_file"
+}
+
+# 创建临时目录并自动注册清理
+create_temp_dir() {
+    local temp_dir
+    temp_dir=$(mktemp -d) || return 1
+    register_temp_file "$temp_dir"
+    echo "$temp_dir"
+}
+
 # ========== 端口检测函数 ========== #
 PORT_RANGE_START=20250
-PORT_RANGE_END=20260
+PORT_RANGE_END=20300
 
 # 检查端口是否被占用
 is_port_in_use() {
@@ -298,6 +373,10 @@ ask_confirmation() {
     local message=$1
     local default=${2:-"n"}
     
+    # 临时关闭set -e以避免交互式输入时退出
+    local old_set_state=$-
+    set +e
+    
     while true; do
         if [[ "$default" == "y" ]]; then
             echo -n -e "${COLOR_YELLOW}$message [Y/n]: ${COLOR_RESET}"
@@ -319,9 +398,13 @@ ask_confirmation() {
         
         case "$response" in
             [Yy]|[Yy][Ee][Ss])
+                # 恢复之前的set状态
+                [[ $old_set_state =~ e ]] && set -e || true
                 return 0
                 ;;
             [Nn]|[Nn][Oo])
+                # 恢复之前的set状态
+                [[ $old_set_state =~ e ]] && set -e || true
                 return 1
                 ;;
             *)
@@ -348,10 +431,17 @@ safe_read() {
     local var_name=$2
     local default_value=${3:-""}
 
+    # 临时关闭set -e以避免交互式输入时退出
+    local old_set_state=$-
+    set +e
+    
     # 尝试使用增强输入，如果失败则使用标准方法
     if ! enhanced_read "$prompt" "$var_name" "$default_value" 2>/dev/null; then
         safe_read_fallback "$prompt" "$var_name" "$default_value"
     fi
+    
+    # 恢复之前的set状态
+    [[ $old_set_state =~ e ]] && set -e || true
 }
 
 # 标准输入读取（回退方案）
@@ -397,6 +487,10 @@ log_operation() {
     
     # 记录日志
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $operation: $details" >> "$log_file"
+    
+    # 设置适当的文件权限（仅root可写，root和root组可读）
+    chmod 640 "$log_file" 2>/dev/null || true
+    chown root:root "$log_file" 2>/dev/null || true
 }
 
 # 显示最近的操作日志

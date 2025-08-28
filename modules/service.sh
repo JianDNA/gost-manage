@@ -128,7 +128,6 @@ add_service() {
 
 # ========== 服务修改 ========== #
 
-# 修改现有转发服务
 modify_service() {
     print_title "修改转发规则"
 
@@ -143,14 +142,19 @@ modify_service() {
     # 显示服务列表
     list_services
 
-    # 简化的服务选择
+    # 使用缓存获取服务名称以提高性能
+    local services
+    if command -v get_cached_service_names >/dev/null 2>&1; then
+        services=$(get_cached_service_names)
+    else
+        services=$(get_service_names)
+    fi
     local service_name
     while true; do
         echo -n -e "${COLOR_YELLOW}请选择服务序号 (1-$count): ${COLOR_RESET}"
         read -r choice
 
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
-            local services=$(get_service_names)
             service_name=$(echo "$services" | sed -n "${choice}p")
             break
         else
@@ -319,14 +323,19 @@ delete_service() {
     # 显示服务列表
     list_services
 
-    # 简化的服务选择
+    # 使用缓存获取服务名称以提高性能
+    local services
+    if command -v get_cached_service_names >/dev/null 2>&1; then
+        services=$(get_cached_service_names)
+    else
+        services=$(get_service_names)
+    fi
     local service_name
     while true; do
         echo -n -e "${COLOR_YELLOW}请选择服务序号 (1-$count): ${COLOR_RESET}"
         read -r choice
 
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
-            local services=$(get_service_names)
             service_name=$(echo "$services" | sed -n "${choice}p")
             break
         else

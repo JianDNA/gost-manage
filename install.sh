@@ -84,7 +84,14 @@ download_and_install() {
     print_info "正在下载 Gost 管理脚本..."
 
     # 创建临时目录
-    local temp_dir=$(mktemp -d)
+    local temp_dir
+    temp_dir=$(mktemp -d) || {
+        print_error "无法创建临时目录"
+        exit 1
+    }
+    
+    # 确保清理临时目录
+    trap "rm -rf '$temp_dir'" EXIT
     cd "$temp_dir"
 
     # 下载项目文件
