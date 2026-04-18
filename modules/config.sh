@@ -115,7 +115,7 @@ get_service_info() {
 get_service_port() {
     local service_name=$1
 
-    get_service_info "$service_name" | grep "addr:" | head -1 | sed 's/.*:\([0-9]*\).*/\1/'
+    get_service_info "$service_name" | grep "addr:" | head -1 | sed 's/.*addr: *[^:]*:\([0-9]*\).*/\1/'
 }
 
 # 获取服务目标地址
@@ -141,15 +141,16 @@ add_service_to_config() {
     local listen_port=$3
     local protocol=$4
     local target_addr=$5
+    local skip_backup=${6:-false}
     
-    # 检查服务是否已存在
     if service_exists "$service_name"; then
         print_error "服务 '$service_name' 已存在"
         return 1
     fi
     
-    # 备份配置文件
-    backup_config "$CONFIG_FILE"
+    if [[ "$skip_backup" != "true" ]]; then
+        backup_config "$CONFIG_FILE"
+    fi
     
     # 构建完整的监听地址
     local full_addr="${listen_addr}:${listen_port}"
@@ -219,12 +220,24 @@ delete_service_from_config() {
     # 备份配置文件
     backup_config "$CONFIG_FILE"
     
-    # 创建临时文件
-    local temp_file=$(create_temp_file)
+    _delete_service_silent "$service_name"
     
-    # 使用更简单的方法：逐行处理，跟踪服务状态
-    local in_target_service=false
+    print_success "服务 '$service_name' 删除成功"
+    log_operation "DELETE_SERVICE" "删除服务: $service_name"
+    
+    if command -v clear_service_names_cache >/dev/null 2>&1; then
+        clear_service_names_cache
+    fi
+    
+    return 0
+}
+
+_delete_service_silent() {
+    local service_name=$1
+    
+    local temp_file=$(create_temp_file)
     local temp_file2=$(create_temp_file)
+    local in_target_service=false
 
     while IFS= read -r line; do
         if [[ "$line" =~ ^\ \ -\ name:.*"$service_name"$ ]] || [[ "$line" == "  - name: $service_name" ]]; then
@@ -238,7 +251,6 @@ delete_service_from_config() {
             continue
         fi
 
-        # 如果不在目标服务内部，保留这行
         if [[ "$in_target_service" == false ]]; then
             echo "$line" >> "$temp_file2"
         fi
@@ -246,14 +258,8 @@ delete_service_from_config() {
     done < "$CONFIG_FILE"
 
     mv "$temp_file2" "$temp_file"
-    
-    # 替换原文件
     mv "$temp_file" "$CONFIG_FILE"
-    
-    print_success "服务 '$service_name' 删除成功"
-    log_operation "DELETE_SERVICE" "删除服务: $service_name"
-    
-    # 清理服务名称缓存
+
     if command -v clear_service_names_cache >/dev/null 2>&1; then
         clear_service_names_cache
     fi
@@ -281,9 +287,11 @@ update_service_in_config() {
         return 1
     fi
 
-    # 先删除旧配置，再添加新配置
-    delete_service_from_config "$service_name"
-    add_service_to_config "$new_service_name" "$new_listen_addr" "$new_listen_port" "$new_protocol" "$new_target_addr"
+    # 备份配置文件
+    backup_config "$CONFIG_FILE"
+
+    _delete_service_silent "$service_name"
+    add_service_to_config "$new_service_name" "$new_listen_addr" "$new_listen_port" "$new_protocol" "$new_target_addr" "true"
 
     if [[ "$service_name" != "$new_service_name" ]]; then
         log_operation "UPDATE_SERVICE" "更新服务: $service_name → $new_service_name"
@@ -319,15 +327,17 @@ fix_config_file() {
         local temp_services=$(create_temp_file)
         
         # 提取所有服务配置（跳过 services: null 行）
-        sed -n '/^  - name:/,/^$/p' "$CONFIG_FILE" | sed '/^$/d' > "$temp_services"
+        sed -n '/^ *- name:/,/^$/p' "$CONFIG_FILE" | sed '/^$/d' > "$temp_services"
         
         if [[ -s "$temp_services" ]]; then
-            # 重写配置文件
             cat > "$CONFIG_FILE" <<EOF
 services:
 EOF
-            # 添加正确缩进的服务配置
-            sed 's/^/  /' "$temp_services" >> "$CONFIG_FILE"
+            if head -1 "$temp_services" | grep -q "^- name:"; then
+                sed 's/^/  /' "$temp_services" >> "$CONFIG_FILE"
+            else
+                cat "$temp_services" >> "$CONFIG_FILE"
+            fi
         else
             # 没有服务，创建空数组
             cat > "$CONFIG_FILE" <<EOF
@@ -543,9 +553,12 @@ try:
                     if service['listener'].startswith('type:'):
                         service['listener'] = {'type': service['listener'][5:].strip()}
 
-    # 标准化输出
+    class IndentDumper(yaml.Dumper):
+        def increase_indent(self, flow=False, indentless=False):
+            return super().increase_indent(flow, False)
+
     with open(temp_file, 'w', encoding='utf-8') as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, indent=2, sort_keys=False)
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, indent=2, sort_keys=False, Dumper=IndentDumper)
 
     sys.exit(0)
 except Exception as e:
@@ -583,7 +596,7 @@ fix_common_format_issues() {
         echo "services:" > "$temp_file"
 
         # 如果原文件有服务配置，添加到新文件中
-        if grep -q "^ *- name:" "$CONFIG_FILE"; then
+        if grep -q "^  - name:" "$CONFIG_FILE"; then
             cat "$CONFIG_FILE" >> "$temp_file"
         fi
 
