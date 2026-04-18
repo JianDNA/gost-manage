@@ -51,7 +51,7 @@ get_service_names() {
     fi
 
     # 只匹配顶级服务的name，不匹配forwarder.nodes下的name
-    grep "^- name:" "$CONFIG_FILE" 2>/dev/null | sed 's/.*name: *\(.*\)/\1/' | sed 's/["\047]//g'
+    grep "^  - name:" "$CONFIG_FILE" 2>/dev/null | sed 's/.*name: *\(.*\)/\1/' | sed 's/["\047]//g'
 }
 
 # 获取服务数量
