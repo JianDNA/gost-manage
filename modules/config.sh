@@ -93,7 +93,7 @@ get_service_info() {
     
     # 使用awk提取服务信息
     awk -v service="$service_name" '
-    /^- name:/ {
+    /^  - name:/ {
         if ($0 ~ service) {
             in_service = 1
             print $0
@@ -102,10 +102,10 @@ get_service_info() {
             in_service = 0
         }
     }
-    in_service && /^  / {
+    in_service && /^    / {
         print $0
     }
-    in_service && /^- name:/ && $0 !~ service {
+    in_service && /^  - name:/ && $0 !~ service {
         exit
     }
     ' "$CONFIG_FILE"
@@ -227,14 +227,12 @@ delete_service_from_config() {
     local temp_file2=$(create_temp_file)
 
     while IFS= read -r line; do
-        # 检查是否是目标服务的开始
-        if [[ "$line" =~ ^-\ name:.*"$service_name"$ ]] || [[ "$line" == "- name: $service_name" ]]; then
+        if [[ "$line" =~ ^\ \ -\ name:.*"$service_name"$ ]] || [[ "$line" == "  - name: $service_name" ]]; then
             in_target_service=true
             continue
         fi
 
-        # 检查是否是其他服务的开始
-        if [[ "$line" =~ ^-\ name: ]] && [[ ! "$line" =~ ^-\ name:.*"$service_name"$ ]] && [[ "$line" != "- name: $service_name" ]]; then
+        if [[ "$line" =~ ^\ \ -\ name: ]] && [[ ! "$line" =~ ^\ \ -\ name:.*"$service_name"$ ]] && [[ "$line" != "  - name: $service_name" ]]; then
             in_target_service=false
             echo "$line" >> "$temp_file2"
             continue
@@ -321,7 +319,7 @@ fix_config_file() {
         local temp_services=$(create_temp_file)
         
         # 提取所有服务配置（跳过 services: null 行）
-        sed -n '/^- name:/,/^$/p' "$CONFIG_FILE" | sed '/^$/d' > "$temp_services"
+        sed -n '/^  - name:/,/^$/p' "$CONFIG_FILE" | sed '/^$/d' > "$temp_services"
         
         if [[ -s "$temp_services" ]]; then
             # 重写配置文件
