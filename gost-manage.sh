@@ -376,7 +376,7 @@ reset_config() {
         
         # 重置配置文件
         cat > "$CONFIG_FILE" <<EOF
-services:
+services: []
 EOF
         
         print_success "配置已重置到初始状态"

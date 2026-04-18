@@ -37,6 +37,56 @@ check_config_file() {
     return 0
 }
 
+# 检查 Python YAML 能力是否可用
+python_yaml_available() {
+    command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1
+}
+
+# 规范化监听地址（IPv6 自动补方括号）
+normalize_listen_addr() {
+    local listen_addr=$1
+
+    if [[ -n "$listen_addr" ]] && validate_ipv6 "$listen_addr" && [[ ! "$listen_addr" =~ ^\[.*\]$ ]]; then
+        echo "[$listen_addr]"
+    else
+        echo "$listen_addr"
+    fi
+}
+
+# 构建完整监听地址
+build_listen_endpoint() {
+    local listen_addr
+    listen_addr=$(normalize_listen_addr "$1")
+    local listen_port=$2
+
+    if [[ -z "$listen_addr" ]]; then
+        echo ":$listen_port"
+    else
+        echo "${listen_addr}:$listen_port"
+    fi
+}
+
+# 输出单个服务的 YAML 配置块
+emit_service_yaml_block() {
+    local service_name=$1
+    local full_addr=$2
+    local protocol=$3
+    local target_addr=$4
+
+    cat <<EOF
+  - name: $service_name
+    addr: "$full_addr"
+    handler:
+      type: $protocol
+    listener:
+      type: $protocol
+    forwarder:
+      nodes:
+        - name: $service_name
+          addr: "$target_addr"
+EOF
+}
+
 # ========== 服务信息获取 ========== #
 
 # 获取所有服务名称
@@ -50,8 +100,44 @@ get_service_names() {
         return 1
     fi
 
-    # 只匹配顶级服务的name，不匹配forwarder.nodes下的name
-    grep "^  - name:" "$CONFIG_FILE" 2>/dev/null | sed 's/.*name: *\(.*\)/\1/' | sed 's/["\047]//g'
+    if python_yaml_available; then
+        local service_names
+        service_names=$(python3 - "$CONFIG_FILE" <<'PY' 2>/dev/null
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if isinstance(service, dict) and 'name' in service:
+        print(service['name'])
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            [[ -n "$service_names" ]] && echo "$service_names"
+            return 0
+        fi
+    fi
+
+    awk '
+    /^  - name:/ {
+        line = $0
+        sub(/^  - name:[[:space:]]*/, "", line)
+        gsub(/["\047]/, "", line)
+        print line
+    }
+    ' "$CONFIG_FILE"
 }
 
 # 获取服务数量
@@ -90,23 +176,59 @@ get_service_info() {
     if ! service_exists "$service_name"; then
         return 1
     fi
-    
-    # 使用awk提取服务信息
+
+    if python_yaml_available; then
+        local service_info
+        service_info=$(python3 - "$CONFIG_FILE" "$service_name" <<'PY' 2>/dev/null
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+service_name = sys.argv[2]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        print(yaml.safe_dump(service, allow_unicode=True, sort_keys=False).rstrip())
+        sys.exit(0)
+
+sys.exit(1)
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            echo "$service_info"
+            return 0
+        fi
+    fi
+
     awk -v service="$service_name" '
     /^  - name:/ {
-        if ($0 ~ service) {
+        line = $0
+        sub(/^  - name:[[:space:]]*/, "", line)
+        gsub(/["\047]/, "", line)
+
+        if (in_service) {
+            exit
+        }
+
+        if (line == service) {
             in_service = 1
             print $0
             next
-        } else {
-            in_service = 0
         }
     }
     in_service && /^    / {
         print $0
-    }
-    in_service && /^  - name:/ && $0 !~ service {
-        exit
     }
     ' "$CONFIG_FILE"
 }
@@ -114,22 +236,226 @@ get_service_info() {
 # 获取服务监听端口
 get_service_port() {
     local service_name=$1
+    local port
 
-    get_service_info "$service_name" | grep "addr:" | head -1 | sed 's/.*addr: *[^:]*:\([0-9]*\).*/\1/'
+    if python_yaml_available; then
+        port=$(python3 - "$CONFIG_FILE" "$service_name" <<'PY' 2>/dev/null
+import re
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+service_name = sys.argv[2]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        addr = str(service.get('addr', '') or '')
+        match = re.search(r':(\d+)$', addr)
+        if match:
+            print(match.group(1))
+            sys.exit(0)
+        sys.exit(1)
+
+sys.exit(1)
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            echo "$port"
+            return 0
+        fi
+    fi
+
+    local full_addr
+    full_addr=$(get_service_info "$service_name" | awk '/^    addr:/ {sub(/^    addr:[[:space:]]*/, "", $0); gsub(/["\047]/, "", $0); print; exit}')
+    if [[ "$full_addr" =~ :([0-9]+)$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        return 1
+    fi
+}
+
+# 获取服务监听地址（空字符串表示所有接口）
+get_service_listen_addr() {
+    local service_name=$1
+    local listen_addr
+
+    if python_yaml_available; then
+        listen_addr=$(python3 - "$CONFIG_FILE" "$service_name" <<'PY' 2>/dev/null
+import re
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+service_name = sys.argv[2]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        addr = str(service.get('addr', '') or '')
+        if addr.startswith(':'):
+            print('')
+            sys.exit(0)
+
+        bracket_match = re.match(r'^(\[[^\]]+\]):\d+$', addr)
+        if bracket_match:
+            print(bracket_match.group(1))
+            sys.exit(0)
+
+        plain_match = re.match(r'^(.*):\d+$', addr)
+        if plain_match:
+            print(plain_match.group(1))
+            sys.exit(0)
+
+        sys.exit(1)
+
+sys.exit(1)
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            echo "$listen_addr"
+            return 0
+        fi
+    fi
+
+    local full_addr
+    full_addr=$(get_service_info "$service_name" | awk '/^    addr:/ {sub(/^    addr:[[:space:]]*/, "", $0); gsub(/["\047]/, "", $0); print; exit}')
+
+    if [[ "$full_addr" =~ ^:(.+)$ ]]; then
+        echo ""
+    elif [[ "$full_addr" =~ ^(\[[^]]+\]):[0-9]+$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    elif [[ "$full_addr" =~ ^(.*):[0-9]+$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        return 1
+    fi
 }
 
 # 获取服务目标地址
 get_service_target() {
     local service_name=$1
+    local target_addr
 
-    get_service_info "$service_name" | grep -A3 "nodes:" | grep "addr:" | sed 's/.*addr: *\(.*\)/\1/' | tr -d '"'"'"
+    if python_yaml_available; then
+        target_addr=$(python3 - "$CONFIG_FILE" "$service_name" <<'PY' 2>/dev/null
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+service_name = sys.argv[2]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        nodes = ((service.get('forwarder') or {}).get('nodes') or [])
+        if isinstance(nodes, list) and nodes:
+            first_node = nodes[0]
+            if isinstance(first_node, dict) and 'addr' in first_node:
+                print(first_node['addr'])
+                sys.exit(0)
+        sys.exit(1)
+
+sys.exit(1)
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            echo "$target_addr"
+            return 0
+        fi
+    fi
+
+    get_service_info "$service_name" | awk '
+    /nodes:/ {in_nodes = 1; next}
+    in_nodes && /addr:/ {
+        sub(/.*addr:[[:space:]]*/, "", $0)
+        gsub(/["\047]/, "", $0)
+        print
+        exit
+    }
+    '
 }
 
 # 获取服务协议类型
 get_service_protocol() {
     local service_name=$1
-    
-    get_service_info "$service_name" | grep "type:" | head -1 | sed 's/.*type: *\(.*\)/\1/' | tr -d '"'"'"
+    local protocol
+
+    if python_yaml_available; then
+        protocol=$(python3 - "$CONFIG_FILE" "$service_name" <<'PY' 2>/dev/null
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+service_name = sys.argv[2]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        handler = service.get('handler') or {}
+        protocol = handler.get('type')
+        if protocol:
+            print(protocol)
+            sys.exit(0)
+        sys.exit(1)
+
+sys.exit(1)
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            echo "$protocol"
+            return 0
+        fi
+    fi
+
+    get_service_info "$service_name" | awk '
+    /type:/ {
+        sub(/.*type:[[:space:]]*/, "", $0)
+        gsub(/["\047]/, "", $0)
+        print
+        exit
+    }
+    '
 }
 
 # ========== 服务配置操作 ========== #
@@ -142,59 +468,96 @@ add_service_to_config() {
     local protocol=$4
     local target_addr=$5
     local skip_backup=${6:-false}
+    local full_addr
     
     if service_exists "$service_name"; then
         print_error "服务 '$service_name' 已存在"
         return 1
     fi
+
+    if [[ "$protocol" != "tcp" && "$protocol" != "udp" ]]; then
+        print_error "不支持的协议类型: $protocol"
+        return 1
+    fi
+
+    full_addr=$(build_listen_endpoint "$listen_addr" "$listen_port")
     
     if [[ "$skip_backup" != "true" ]]; then
         backup_config "$CONFIG_FILE"
     fi
-    
-    # 构建完整的监听地址
-    local full_addr="${listen_addr}:${listen_port}"
-    if [[ -z "$listen_addr" ]]; then
-        full_addr=":${listen_port}"
-    fi
-    
-    # 处理IPv6地址的引号问题
-    local quoted_target_addr="$target_addr"
-    if [[ "$target_addr" =~ ^\[.*\]: ]]; then
-        quoted_target_addr="\"$target_addr\""
-    fi
 
-    # 检查配置文件结构并添加服务
-    # 检查是否为空服务配置：services: [] 或者只有 services:
-    if grep -q "^services: \[\]$" "$CONFIG_FILE" || (grep -q "^services:$" "$CONFIG_FILE" && ! grep -q "^  - name:" "$CONFIG_FILE"); then
-        # 如果是空数组，替换为第一个服务
-        cat > "$CONFIG_FILE" <<EOF
-services:
-  - name: $service_name
-    addr: $full_addr
-    handler:
-      type: $protocol
-    listener:
-      type: $protocol
-    forwarder:
-      nodes:
-        - name: $service_name
-          addr: $quoted_target_addr
-EOF
+    if python_yaml_available; then
+        local temp_file
+        temp_file=$(create_temp_file) || return 1
+
+        if ! python3 - "$CONFIG_FILE" "$temp_file" "$service_name" "$full_addr" "$protocol" "$target_addr" <<'PY'
+import sys
+
+import yaml
+
+config_file, temp_file, service_name, full_addr, protocol, target_addr = sys.argv[1:7]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except FileNotFoundError:
+    data = {}
+
+if not isinstance(data, dict):
+    data = {}
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    services = []
+
+for service in services:
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        sys.exit(1)
+
+services.append({
+    'name': service_name,
+    'addr': full_addr,
+    'handler': {'type': protocol},
+    'listener': {'type': protocol},
+    'forwarder': {
+        'nodes': [{
+            'name': service_name,
+            'addr': target_addr,
+        }]
+    },
+})
+
+data['services'] = services
+
+with open(temp_file, 'w', encoding='utf-8') as fh:
+    yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
+PY
+        then
+            print_error "写入配置文件失败"
+            return 1
+        fi
+
+        mv "$temp_file" "$CONFIG_FILE"
     else
-        # 如果已有服务，正确缩进追加
-        cat >> "$CONFIG_FILE" <<EOF
-  - name: $service_name
-    addr: $full_addr
-    handler:
-      type: $protocol
-    listener:
-      type: $protocol
-    forwarder:
-      nodes:
-        - name: $service_name
-          addr: $quoted_target_addr
-EOF
+        local temp_file
+        temp_file=$(create_temp_file) || return 1
+
+        if grep -q "^services: \[\]$" "$CONFIG_FILE" || (grep -q "^services:$" "$CONFIG_FILE" && ! grep -q "^  - name:" "$CONFIG_FILE"); then
+            {
+                echo "services:"
+                emit_service_yaml_block "$service_name" "$full_addr" "$protocol" "$target_addr"
+            } > "$temp_file"
+        else
+            cat "$CONFIG_FILE" > "$temp_file"
+            emit_service_yaml_block "$service_name" "$full_addr" "$protocol" "$target_addr" >> "$temp_file"
+        fi
+
+        if ! validate_yaml_syntax "$temp_file"; then
+            print_error "生成的新配置无效，已取消写入"
+            return 1
+        fi
+
+        mv "$temp_file" "$CONFIG_FILE"
     fi
     
     print_success "服务 '$service_name' 添加成功"
@@ -219,8 +582,54 @@ delete_service_from_config() {
     
     # 备份配置文件
     backup_config "$CONFIG_FILE"
-    
-    _delete_service_silent "$service_name"
+
+    if python_yaml_available; then
+        local temp_file
+        temp_file=$(create_temp_file) || return 1
+
+        if ! python3 - "$CONFIG_FILE" "$temp_file" "$service_name" <<'PY'
+import sys
+
+import yaml
+
+config_file, temp_file, service_name = sys.argv[1:4]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+if not isinstance(data, dict):
+    data = {}
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    services = []
+
+filtered_services = [
+    service for service in services
+    if not (isinstance(service, dict) and str(service.get('name', '')) == service_name)
+]
+
+if len(filtered_services) == len(services):
+    sys.exit(1)
+
+data['services'] = filtered_services
+
+with open(temp_file, 'w', encoding='utf-8') as fh:
+    yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
+PY
+        then
+            print_error "删除服务失败"
+            return 1
+        fi
+
+        mv "$temp_file" "$CONFIG_FILE"
+    elif ! _delete_service_silent "$service_name"; then
+        print_error "删除服务失败"
+        return 1
+    fi
     
     print_success "服务 '$service_name' 删除成功"
     log_operation "DELETE_SERVICE" "删除服务: $service_name"
@@ -238,14 +647,16 @@ _delete_service_silent() {
     local temp_file=$(create_temp_file)
     local temp_file2=$(create_temp_file)
     local in_target_service=false
+    local deleted=false
 
     while IFS= read -r line; do
-        if [[ "$line" =~ ^\ \ -\ name:.*"$service_name"$ ]] || [[ "$line" == "  - name: $service_name" ]]; then
+        if [[ "$line" == "  - name: $service_name" ]] || [[ "$line" == "  - name: \"$service_name\"" ]] || [[ "$line" == "  - name: '$service_name'" ]]; then
             in_target_service=true
+            deleted=true
             continue
         fi
 
-        if [[ "$line" =~ ^\ \ -\ name: ]] && [[ ! "$line" =~ ^\ \ -\ name:.*"$service_name"$ ]] && [[ "$line" != "  - name: $service_name" ]]; then
+        if [[ "$line" =~ ^\ \ -\ name: ]]; then
             in_target_service=false
             echo "$line" >> "$temp_file2"
             continue
@@ -257,7 +668,21 @@ _delete_service_silent() {
 
     done < "$CONFIG_FILE"
 
-    mv "$temp_file2" "$temp_file"
+    if [[ "$deleted" != "true" ]]; then
+        return 1
+    fi
+
+    if grep -q "^  - name:" "$temp_file2"; then
+        cat "$temp_file2" > "$temp_file"
+    else
+        echo "services: []" > "$temp_file"
+    fi
+
+    if ! validate_yaml_syntax "$temp_file"; then
+        print_error "删除服务后配置文件无效，已取消写入"
+        return 1
+    fi
+
     mv "$temp_file" "$CONFIG_FILE"
 
     if command -v clear_service_names_cache >/dev/null 2>&1; then
@@ -275,6 +700,7 @@ update_service_in_config() {
     local new_listen_port=$4
     local new_protocol=$5
     local new_target_addr=$6
+    local full_addr
 
     if ! service_exists "$service_name"; then
         print_error "服务 '$service_name' 不存在"
@@ -289,9 +715,88 @@ update_service_in_config() {
 
     # 备份配置文件
     backup_config "$CONFIG_FILE"
+    full_addr=$(build_listen_endpoint "$new_listen_addr" "$new_listen_port")
 
-    _delete_service_silent "$service_name"
-    add_service_to_config "$new_service_name" "$new_listen_addr" "$new_listen_port" "$new_protocol" "$new_target_addr" "true"
+    if python_yaml_available; then
+        local temp_file
+        temp_file=$(create_temp_file) || return 1
+
+        if ! python3 - "$CONFIG_FILE" "$temp_file" "$service_name" "$new_service_name" "$full_addr" "$new_protocol" "$new_target_addr" <<'PY'
+import sys
+
+import yaml
+
+config_file, temp_file, service_name, new_service_name, full_addr, new_protocol, new_target_addr = sys.argv[1:8]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+if not isinstance(data, dict):
+    data = {}
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    services = []
+
+target_index = None
+for index, service in enumerate(services):
+    if isinstance(service, dict) and str(service.get('name', '')) == service_name:
+        target_index = index
+        break
+
+if target_index is None:
+    sys.exit(1)
+
+for index, service in enumerate(services):
+    if index == target_index:
+        continue
+    if isinstance(service, dict) and str(service.get('name', '')) == new_service_name:
+        sys.exit(1)
+
+services[target_index] = {
+    'name': new_service_name,
+    'addr': full_addr,
+    'handler': {'type': new_protocol},
+    'listener': {'type': new_protocol},
+    'forwarder': {
+        'nodes': [{
+            'name': new_service_name,
+            'addr': new_target_addr,
+        }]
+    },
+}
+
+data['services'] = services
+
+with open(temp_file, 'w', encoding='utf-8') as fh:
+    yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
+PY
+        then
+            print_error "更新服务失败"
+            return 1
+        fi
+
+        mv "$temp_file" "$CONFIG_FILE"
+    else
+        local rollback_file
+        rollback_file=$(create_temp_file) || return 1
+        cp "$CONFIG_FILE" "$rollback_file"
+
+        if ! _delete_service_silent "$service_name"; then
+            print_error "删除旧服务配置失败"
+            cp "$rollback_file" "$CONFIG_FILE"
+            return 1
+        fi
+
+        if ! add_service_to_config "$new_service_name" "$new_listen_addr" "$new_listen_port" "$new_protocol" "$new_target_addr" "true"; then
+            cp "$rollback_file" "$CONFIG_FILE"
+            print_error "写入新服务配置失败，已自动回滚"
+            return 1
+        fi
+    fi
 
     if [[ "$service_name" != "$new_service_name" ]]; then
         log_operation "UPDATE_SERVICE" "更新服务: $service_name → $new_service_name"
@@ -504,23 +1009,17 @@ normalize_config_format() {
 # 使用Python标准化YAML格式
 normalize_yaml_with_python() {
     local temp_file=$(create_temp_file)
-    
-    # 安全地转义配置文件路径
-    local escaped_config_file
-    escaped_config_file=$(printf '%q' "$CONFIG_FILE")
-    local escaped_temp_file  
-    escaped_temp_file=$(printf '%q' "$temp_file")
 
-    python3 << EOF
+    python3 - "$CONFIG_FILE" "$temp_file" <<'EOF'
 import yaml
 import sys
 import re
 import os
 
+config_file = sys.argv[1]
+temp_file = sys.argv[2]
+
 try:
-    config_file = $escaped_config_file
-    temp_file = $escaped_temp_file
-    
     # 检查文件是否存在和可读
     if not os.path.exists(config_file) or not os.access(config_file, os.R_OK):
         print(f"无法读取配置文件: {config_file}", file=sys.stderr)
@@ -580,11 +1079,11 @@ fix_common_format_issues() {
     local temp_file=$(create_temp_file)
     local fixed=false
 
-    # 修复 services: [] 格式
-    if grep -q "services: \[\]" "$CONFIG_FILE"; then
-        sed 's/services: \[\]/services:/' "$CONFIG_FILE" > "$temp_file"
+    # 修复空 services 块
+    if grep -q "^services:[[:space:]]*$" "$CONFIG_FILE" && ! grep -q "^  - name:" "$CONFIG_FILE"; then
+        echo "services: []" > "$temp_file"
         mv "$temp_file" "$CONFIG_FILE"
-        print_success "修复 services: [] 格式"
+        print_success "修复空 services 块"
         fixed=true
     fi
 
@@ -598,6 +1097,8 @@ fix_common_format_issues() {
         # 如果原文件有服务配置，添加到新文件中
         if grep -q "^  - name:" "$CONFIG_FILE"; then
             cat "$CONFIG_FILE" >> "$temp_file"
+        else
+            echo "services: []" > "$temp_file"
         fi
 
         mv "$temp_file" "$CONFIG_FILE"

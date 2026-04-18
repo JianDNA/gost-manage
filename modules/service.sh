@@ -170,11 +170,13 @@ modify_service() {
     print_info "当前服务配置:"
     
     # 获取当前配置
+    local current_listen_addr=$(get_service_listen_addr "$service_name")
     local current_port=$(get_service_port "$service_name")
     local current_target=$(get_service_target "$service_name")
     local current_protocol=$(get_service_protocol "$service_name")
     
     echo "  服务名称: $service_name"
+    echo "  监听地址: ${current_listen_addr:-所有接口}"
     echo "  监听端口: $current_port"
     echo "  协议类型: $current_protocol"
     echo "  目标地址: $current_target"
@@ -211,7 +213,7 @@ modify_service() {
     done
 
     # 监听地址（从当前配置中提取）
-    safe_read "请输入新的监听地址 [默认本机]" new_listen_addr ""
+    safe_read "请输入新的监听地址 [当前: ${current_listen_addr:-所有接口}]" new_listen_addr "$current_listen_addr"
     
     # 监听端口
     while true; do
@@ -435,6 +437,12 @@ import_services() {
             ((error_count++))
             continue
         fi
+
+        if [[ "$protocol" != "tcp" && "$protocol" != "udp" ]]; then
+            print_error "第 $line_num 行协议类型错误: $protocol"
+            ((error_count++))
+            continue
+        fi
         
         if ! validate_target_address "$target_addr"; then
             print_error "第 $line_num 行目标地址格式错误: $target_addr"
@@ -489,11 +497,12 @@ export_services() {
     
     local services=$(get_service_names)
     while IFS= read -r service; do
+        local listen_addr=$(get_service_listen_addr "$service")
         local port=$(get_service_port "$service")
         local target=$(get_service_target "$service")
         local protocol=$(get_service_protocol "$service")
         
-        echo "$service,,${port},$protocol,$target" >> "$export_file"
+        echo "$service,$listen_addr,${port},$protocol,$target" >> "$export_file"
     done <<< "$services"
     
     print_success "转发规则已导出到: $export_file"

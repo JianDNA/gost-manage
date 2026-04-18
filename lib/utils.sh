@@ -4,14 +4,25 @@
 # 通用工具函数，包括颜色输出、端口检测、YAML处理等
 
 # ========== 配色定义 ========== #
-COLOR_RESET=$(tput sgr0)
-COLOR_RED=$(tput setaf 1)
-COLOR_GREEN=$(tput setaf 2)
-COLOR_YELLOW=$(tput setaf 3)
-COLOR_BLUE=$(tput setaf 4)
-COLOR_MAGENTA=$(tput setaf 5)
-COLOR_CYAN=$(tput setaf 6)
-COLOR_WHITE=$(tput setaf 7)
+if command -v tput >/dev/null 2>&1 && [[ -n "${TERM:-}" ]] && tput colors >/dev/null 2>&1; then
+    COLOR_RESET=$(tput sgr0)
+    COLOR_RED=$(tput setaf 1)
+    COLOR_GREEN=$(tput setaf 2)
+    COLOR_YELLOW=$(tput setaf 3)
+    COLOR_BLUE=$(tput setaf 4)
+    COLOR_MAGENTA=$(tput setaf 5)
+    COLOR_CYAN=$(tput setaf 6)
+    COLOR_WHITE=$(tput setaf 7)
+else
+    COLOR_RESET=""
+    COLOR_RED=""
+    COLOR_GREEN=""
+    COLOR_YELLOW=""
+    COLOR_BLUE=""
+    COLOR_MAGENTA=""
+    COLOR_CYAN=""
+    COLOR_WHITE=""
+fi
 
 # ========== 输出函数 ========== #
 print_success() {
@@ -90,7 +101,9 @@ register_temp_file() {
 cleanup_temp_files_on_exit() {
     local file
     for file in "${TEMP_FILES_TO_CLEANUP[@]}"; do
-        if [[ -f "$file" ]]; then
+        if [[ -d "$file" ]]; then
+            rm -rf "$file" 2>/dev/null || true
+        elif [[ -e "$file" ]]; then
             rm -f "$file" 2>/dev/null || true
         fi
     done
@@ -131,8 +144,41 @@ is_port_used_by_gost() {
     if [[ ! -f "$config_file" ]]; then
         return 1
     fi
-    
-    grep -q ":$port" "$config_file"
+
+    if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
+        python3 - "$config_file" "$port" <<'PY'
+import re
+import sys
+
+import yaml
+
+config_file = sys.argv[1]
+port = sys.argv[2]
+
+try:
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+except Exception:
+    sys.exit(1)
+
+services = data.get('services') or []
+if not isinstance(services, list):
+    sys.exit(1)
+
+for service in services:
+    if not isinstance(service, dict):
+        continue
+    addr = str(service.get('addr', '') or '')
+    match = re.search(r':(\d+)$', addr)
+    if match and match.group(1) == port:
+        sys.exit(0)
+
+sys.exit(1)
+PY
+        return $?
+    fi
+
+    grep -Eq "^    addr:[[:space:]]*['\"]?.*:${port}['\"]?[[:space:]]*$" "$config_file"
 }
 
 # 获取可用端口
@@ -168,11 +214,15 @@ validate_yaml_syntax() {
     
     # 使用Python验证YAML语法（如果可用）
     if command -v python3 >/dev/null 2>&1; then
-        python3 -c "
-import yaml
+        python3 - "$file" <<'PY' 2>/dev/null
 import sys
+
+import yaml
+
+file_path = sys.argv[1]
+
 try:
-    with open('$file', 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         yaml.safe_load(f)
     print('YAML语法正确')
     sys.exit(0)
@@ -182,7 +232,7 @@ except yaml.YAMLError as e:
 except Exception as e:
     print(f'文件读取错误: {e}')
     sys.exit(1)
-" 2>/dev/null
+PY
         return $?
     fi
     
